@@ -42,6 +42,7 @@ class ChannelManager:
                     self.config.channels.telegram,
                     self.bus,
                     groq_api_key=self.config.providers.groq.api_key,
+                    whisper_model=self.config.providers.groq.whisper_model,
                 )
                 logger.info("Telegram channel enabled")
             except ImportError as e:
@@ -76,6 +77,7 @@ class ChannelManager:
                 self.channels["feishu"] = FeishuChannel(
                     self.config.channels.feishu, self.bus,
                     groq_api_key=self.config.providers.groq.api_key,
+                    whisper_model=self.config.providers.groq.whisper_model,
                 )
                 logger.info("Feishu channel enabled")
             except ImportError as e:

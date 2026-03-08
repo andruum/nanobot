@@ -245,10 +245,11 @@ class FeishuChannel(BaseChannel):
 
     name = "feishu"
 
-    def __init__(self, config: FeishuConfig, bus: MessageBus, groq_api_key: str = ""):
+    def __init__(self, config: FeishuConfig, bus: MessageBus, groq_api_key: str = "", whisper_model: str = "whisper-large-v3-turbo"):
         super().__init__(config, bus)
         self.config: FeishuConfig = config
         self.groq_api_key = groq_api_key
+        self.whisper_model = whisper_model
         self._client: Any = None
         self._ws_client: Any = None
         self._ws_thread: threading.Thread | None = None
@@ -931,7 +932,7 @@ class FeishuChannel(BaseChannel):
                 if msg_type == "audio" and file_path and self.groq_api_key:
                     try:
                         from nanobot.providers.transcription import GroqTranscriptionProvider
-                        transcriber = GroqTranscriptionProvider(api_key=self.groq_api_key)
+                        transcriber = GroqTranscriptionProvider(api_key=self.groq_api_key, model=self.whisper_model)
                         transcription = await transcriber.transcribe(file_path)
                         if transcription:
                             content_text = f"[transcription: {transcription}]"

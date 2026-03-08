@@ -247,6 +247,12 @@ class ProviderConfig(Base):
     extra_headers: dict[str, str] | None = None  # Custom headers (e.g. APP-Code for AiHubMix)
 
 
+class GroqConfig(ProviderConfig):
+    """Groq provider configuration, with Whisper model selection."""
+
+    whisper_model: str = "whisper-large-v3"
+
+
 class ProvidersConfig(Base):
     """Configuration for LLM providers."""
 
@@ -256,7 +262,7 @@ class ProvidersConfig(Base):
     openai: ProviderConfig = Field(default_factory=ProviderConfig)
     openrouter: ProviderConfig = Field(default_factory=ProviderConfig)
     deepseek: ProviderConfig = Field(default_factory=ProviderConfig)
-    groq: ProviderConfig = Field(default_factory=ProviderConfig)
+    groq: GroqConfig = Field(default_factory=GroqConfig)
     zhipu: ProviderConfig = Field(default_factory=ProviderConfig)
     dashscope: ProviderConfig = Field(default_factory=ProviderConfig)  # 阿里云通义千问
     vllm: ProviderConfig = Field(default_factory=ProviderConfig)
