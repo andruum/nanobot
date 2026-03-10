@@ -11,8 +11,12 @@ services:
     <<: *common-config
     command: ["gateway"]
     restart: unless-stopped
+    environment:
+      TZ: Europe/Berlin
     ports:
       - 18790:18790
+    networks:
+      - mcp-network
     deploy:
       resources:
         limits:
@@ -21,7 +25,7 @@ services:
         reservations:
           cpus: '0.25'
           memory: 256M
-  
+
   nanobot-cli:
     <<: *common-config
     profiles:
@@ -29,3 +33,9 @@ services:
     command: ["status"]
     stdin_open: true
     tty: true
+
+
+networks:
+  mcp-network:
+    name: mcp-network
+    external: true
