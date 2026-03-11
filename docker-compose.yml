@@ -9,6 +9,7 @@ services:
   nanobot-gateway:
     container_name: nanobot-gateway
     <<: *common-config
+    user: "${UID:-1000}:${GID:-1000}"
     command: ["gateway"]
     restart: unless-stopped
     environment:
