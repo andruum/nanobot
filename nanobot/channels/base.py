@@ -44,7 +44,7 @@ class BaseChannel(ABC):
         try:
             from nanobot.providers.transcription import GroqTranscriptionProvider
 
-            provider = GroqTranscriptionProvider(api_key=self.transcription_api_key, model=self.transcription_model or None)
+            provider = GroqTranscriptionProvider(api_key=self.transcription_api_key, model=self.transcription_model)
             return await provider.transcribe(file_path)
         except Exception as e:
             logger.warning("{}: audio transcription failed: {}", self.name, e)
@@ -128,6 +128,11 @@ class BaseChannel(ABC):
         )
 
         await self.bus.publish_inbound(msg)
+
+    @classmethod
+    def default_config(cls) -> dict[str, Any]:
+        """Return default config for onboard. Override in plugins to auto-populate config.json."""
+        return {"enabled": False}
 
     @property
     def is_running(self) -> bool:
