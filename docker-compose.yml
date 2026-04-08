@@ -3,7 +3,7 @@ x-common-config: &common-config
     context: .
     dockerfile: Dockerfile
   volumes:
-    - ~/.nanobot:/home/nanobot/.nanobot
+    - /home/andre/.nanobot:/home/nanobot/.nanobot
   user: "${UID:-1000}:${GID:-1000}"
   cap_drop:
     - ALL
