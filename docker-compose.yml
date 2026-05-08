@@ -3,7 +3,8 @@ x-common-config: &common-config
     context: .
     dockerfile: Dockerfile
   volumes:
-    - ~/.nanobot:/home/nanobot/.nanobot
+    - /home/andre/.nanobot:/home/nanobot/.nanobot
+  user: "${UID:-1000}:${GID:-1000}"
   cap_drop:
     - ALL
   cap_add:
@@ -18,12 +19,16 @@ services:
     <<: *common-config
     command: ["gateway"]
     restart: unless-stopped
+    environment:
+      TZ: Europe/Berlin
     ports:
       - 18790:18790
+    networks:
+      - mcp-network
     deploy:
       resources:
         limits:
-          cpus: "1"
+          cpus: "0.5"
           memory: 1G
         reservations:
           cpus: "0.25"
@@ -40,7 +45,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "1"
+          cpus: "0.5"
           memory: 1G
         reservations:
           cpus: "0.25"
@@ -53,3 +58,9 @@ services:
     command: ["status"]
     stdin_open: true
     tty: true
+
+
+networks:
+  mcp-network:
+    name: mcp-network
+    external: true

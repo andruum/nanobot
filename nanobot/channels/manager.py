@@ -274,10 +274,7 @@ class ChannelManager:
                 if pending:
                     msg = pending.pop(0)
                 else:
-                    msg = await asyncio.wait_for(
-                        self.bus.consume_outbound(),
-                        timeout=1.0
-                    )
+                    msg = await asyncio.wait_for(self.bus.consume_outbound(), timeout=1.0)
 
                 if msg.metadata.get("_progress"):
                     if msg.metadata.get("_tool_hint") and not self._should_send_progress(
@@ -400,7 +397,11 @@ class ChannelManager:
                 delay = _SEND_RETRY_DELAYS[min(attempt, len(_SEND_RETRY_DELAYS) - 1)]
                 logger.warning(
                     "Send to {} failed (attempt {}/{}): {}, retrying in {}s",
-                    msg.channel, attempt + 1, max_attempts, type(e).__name__, delay
+                    msg.channel,
+                    attempt + 1,
+                    max_attempts,
+                    type(e).__name__,
+                    delay,
                 )
                 try:
                     await asyncio.sleep(delay)
@@ -414,10 +415,7 @@ class ChannelManager:
     def get_status(self) -> dict[str, Any]:
         """Get status of all channels."""
         return {
-            name: {
-                "enabled": True,
-                "running": channel.is_running
-            }
+            name: {"enabled": True, "running": channel.is_running}
             for name, channel in self.channels.items()
         }
 
