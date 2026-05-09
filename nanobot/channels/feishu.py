@@ -13,8 +13,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from lark_oapi.api.im.v1.model import MentionEvent, P2ImMessageReceiveV1
-from lark_oapi.core.const import FEISHU_DOMAIN, LARK_DOMAIN
+from loguru import logger
 from pydantic import Field
 
 from nanobot.bus.events import OutboundMessage
@@ -22,7 +21,6 @@ from nanobot.bus.queue import MessageBus
 from nanobot.channels.base import BaseChannel
 from nanobot.config.paths import get_media_dir
 from nanobot.config.schema import Base
-from nanobot.utils.logging_bridge import redirect_lib_logging
 
 FEISHU_AVAILABLE = importlib.util.find_spec("lark_oapi") is not None
 
@@ -301,7 +299,7 @@ class FeishuChannel(BaseChannel):
             config = FeishuConfig.model_validate(config)
         super().__init__(config, bus)
         self.config: FeishuConfig = config
-        self._client: lark.Client = None
+        self._client: Any = None
         self._ws_client: Any = None
         self._ws_thread: threading.Thread | None = None
         self._processed_message_ids: OrderedDict[str, None] = OrderedDict()  # Ordered dedup cache
@@ -329,18 +327,14 @@ class FeishuChannel(BaseChannel):
 
         import lark_oapi as lark
 
-        redirect_lib_logging("Lark")
-
         self._running = True
         self._loop = asyncio.get_running_loop()
 
         # Create Lark client for sending messages
-        domain = LARK_DOMAIN if self.config.domain == "lark" else FEISHU_DOMAIN
         self._client = (
             lark.Client.builder()
             .app_id(self.config.app_id)
             .app_secret(self.config.app_secret)
-            .domain(domain)
             .log_level(lark.LogLevel.INFO)
             .build()
         )
@@ -447,7 +441,9 @@ class FeishuChannel(BaseChannel):
                 data = json.loads(response.raw.content)
                 bot = (data.get("data") or data).get("bot") or data.get("bot") or {}
                 return bot.get("open_id")
-            self.logger.warning("Failed to get bot info: code={}, msg={}", response.code, response.msg)
+            self.logger.warning(
+                "Failed to get bot info: code={}, msg={}", response.code, response.msg
+            )
             return None
         except Exception as e:
             self.logger.warning("Error fetching bot info: {}", e)
@@ -502,14 +498,11 @@ class FeishuChannel(BaseChannel):
             mid = getattr(mention, "id", None)
             if not mid:
                 continue
-            mention_open_id = getattr(mid, "open_id", None) or ""
-            if self._bot_open_id:
-                if mention_open_id == self._bot_open_id:
-                    return True
-            else:
-                # Fallback heuristic when bot open_id is unavailable
-                if not getattr(mid, "user_id", None) and mention_open_id.startswith("ou_"):
-                    return True
+            # Bot mentions have no user_id (None or "") but a valid open_id
+            if not getattr(mid, "user_id", None) and (
+                getattr(mid, "open_id", None) or ""
+            ).startswith("ou_"):
+                return True
         return False
 
     def _is_group_message_for_bot(self, message: Any) -> bool:
@@ -541,10 +534,9 @@ class FeishuChannel(BaseChannel):
             response = self._client.im.v1.message_reaction.create(request)
 
             if not response.success():
-                self.logger.warning(
+                logger.warning(
                     "Failed to add reaction: code={}, msg={}", response.code, response.msg
                 )
-                return None
             else:
                 self.logger.debug("Added {} reaction to message {}", emoji_type, message_id)
                 return response.data.reaction_id if response.data else None
@@ -919,10 +911,12 @@ class FeishuChannel(BaseChannel):
                 response = self._client.im.v1.image.create(request)
                 if response.success():
                     image_key = response.data.image_key
-                    self.logger.debug("Uploaded image {}: {}", os.path.basename(file_path), image_key)
+                    self.logger.debug(
+                        "Uploaded image {}: {}", os.path.basename(file_path), image_key
+                    )
                     return image_key
                 else:
-                    self.logger.error(
+                    logger.error(
                         "Failed to upload image: code={}, msg={}", response.code, response.msg
                     )
                     return None
@@ -956,7 +950,7 @@ class FeishuChannel(BaseChannel):
                     self.logger.debug("Uploaded file {}: {}", file_name, file_key)
                     return file_key
                 else:
-                    self.logger.error(
+                    logger.error(
                         "Failed to upload file: code={}, msg={}", response.code, response.msg
                     )
                     return None
@@ -986,7 +980,7 @@ class FeishuChannel(BaseChannel):
                     file_data = file_data.read()
                 return file_data, response.file_name
             else:
-                self.logger.error(
+                logger.error(
                     "Failed to download image: code={}, msg={}", response.code, response.msg
                 )
                 return None, None
@@ -1020,7 +1014,7 @@ class FeishuChannel(BaseChannel):
                     file_data = file_data.read()
                 return file_data, response.file_name
             else:
-                self.logger.error(
+                logger.error(
                     "Failed to download {}: code={}, msg={}",
                     resource_type,
                     response.code,
@@ -1102,8 +1096,8 @@ class FeishuChannel(BaseChannel):
             request = GetMessageRequest.builder().message_id(message_id).build()
             response = self._client.im.v1.message.get(request)
             if not response.success():
-                self.logger.debug(
-                    "could not fetch parent message {}: code={}, msg={}",
+                logger.debug(
+                    "Feishu: could not fetch parent message {}: code={}, msg={}",
                     message_id,
                     response.code,
                     response.msg,
@@ -1138,7 +1132,9 @@ class FeishuChannel(BaseChannel):
             self.logger.debug("error fetching parent message {}: {}", message_id, e)
             return None
 
-    def _reply_message_sync(self, parent_message_id: str, msg_type: str, content: str, *, reply_in_thread: bool = False) -> bool:
+    def _reply_message_sync(
+        self, parent_message_id: str, msg_type: str, content: str, *, reply_in_thread: bool = False
+    ) -> bool:
         """Reply to an existing Feishu message using the Reply API (synchronous).
 
         Args:
@@ -1148,19 +1144,18 @@ class FeishuChannel(BaseChannel):
         from lark_oapi.api.im.v1 import ReplyMessageRequest, ReplyMessageRequestBody
 
         try:
-            body_builder = ReplyMessageRequestBody.builder().msg_type(msg_type).content(content)
-            if reply_in_thread:
-                body_builder = body_builder.reply_in_thread(True)
             request = (
                 ReplyMessageRequest.builder()
                 .message_id(parent_message_id)
-                .request_body(body_builder.build())
+                .request_body(
+                    ReplyMessageRequestBody.builder().msg_type(msg_type).content(content).build()
+                )
                 .build()
             )
             response = self._client.im.v1.message.reply(request)
             if not response.success():
-                self.logger.error(
-                    "Failed to reply to message {}: code={}, msg={}, log_id={}",
+                logger.error(
+                    "Failed to reply to Feishu message {}: code={}, msg={}, log_id={}",
                     parent_message_id,
                     response.code,
                     response.msg,
@@ -1172,21 +1167,6 @@ class FeishuChannel(BaseChannel):
         except Exception:
             self.logger.exception("Error replying to message {}", parent_message_id)
             return False
-
-    def _should_use_reply_in_thread(self, metadata: dict[str, Any]) -> bool:
-        """Return whether a group reply should create a Feishu thread/topic."""
-        return metadata.get("chat_type", "group") == "group" and self.config.reply_to_message
-
-    def _thread_reply_target(self, metadata: dict[str, Any]) -> str | None:
-        """Return the message_id that should receive a Reply API response."""
-        if metadata.get("chat_type", "group") != "group":
-            return None
-        message_id = metadata.get("message_id")
-        if not message_id:
-            return None
-        if metadata.get("thread_id") or self.config.reply_to_message:
-            return message_id
-        return None
 
     def _send_message_sync(
         self, receive_id_type: str, receive_id: str, msg_type: str, content: str
@@ -1209,8 +1189,8 @@ class FeishuChannel(BaseChannel):
             )
             response = self._client.im.v1.message.create(request)
             if not response.success():
-                self.logger.error(
-                    "Failed to send {} message: code={}, msg={}, log_id={}",
+                logger.error(
+                    "Failed to send Feishu {} message: code={}, msg={}, log_id={}",
                     msg_type,
                     response.code,
                     response.msg,
@@ -1261,27 +1241,21 @@ class FeishuChannel(BaseChannel):
             )
             response = self._client.cardkit.v1.card.create(request)
             if not response.success():
-                self.logger.warning(
+                logger.warning(
                     "Failed to create streaming card: code={}, msg={}", response.code, response.msg
                 )
                 return None
             card_id = getattr(response.data, "card_id", None)
             if card_id:
-                card_content = json.dumps(
-                    {"type": "card", "data": {"card_id": card_id}}, ensure_ascii=False
+                message_id = self._send_message_sync(
+                    receive_id_type,
+                    chat_id,
+                    "interactive",
+                    json.dumps({"type": "card", "data": {"card_id": card_id}}),
                 )
-                if reply_message_id:
-                    sent = self._reply_message_sync(
-                        reply_message_id, "interactive", card_content,
-                        reply_in_thread=reply_in_thread,
-                    )
-                else:
-                    sent = self._send_message_sync(
-                        receive_id_type, chat_id, "interactive", card_content,
-                    ) is not None
-                if sent:
+                if message_id:
                     return card_id
-                self.logger.warning(
+                logger.warning(
                     "Created streaming card {} but failed to send it to {}", card_id, chat_id
                 )
             return None
@@ -1311,7 +1285,7 @@ class FeishuChannel(BaseChannel):
             )
             response = self._client.cardkit.v1.card_element.content(request)
             if not response.success():
-                self.logger.warning(
+                logger.warning(
                     "Failed to stream-update card {}: code={}, msg={}",
                     card_id,
                     response.code,
@@ -1363,14 +1337,7 @@ class FeishuChannel(BaseChannel):
     async def send_delta(
         self, chat_id: str, delta: str, metadata: dict[str, Any] | None = None
     ) -> None:
-        """Progressive streaming via CardKit: create card on first delta, stream-update on subsequent.
-
-        Supported metadata keys:
-            _stream_end: Finalize the streaming card.
-            _tool_hint:  Delta is a formatted tool hint (for display only).
-            message_id:  Original message id (used with _stream_end for reaction cleanup).
-            chat_type:   "group" or "p2p" — controls reply-in-thread for streaming cards.
-        """
+        """Progressive streaming via CardKit: create card on first delta, stream-update on subsequent."""
         if not self._client:
             return
         meta = metadata or {}
@@ -1402,44 +1369,29 @@ class FeishuChannel(BaseChannel):
             # back to sending a regular interactive card.
             if buf.card_id:
                 buf.sequence += 1
-                ok = await loop.run_in_executor(
+                await loop.run_in_executor(
                     None,
                     self._stream_update_text_sync,
                     buf.card_id,
                     buf.text,
                     buf.sequence,
                 )
-                if ok:
-                    buf.sequence += 1
-                    await loop.run_in_executor(
-                        None,
-                        self._close_streaming_mode_sync,
-                        buf.card_id,
-                        buf.sequence,
-                    )
-                    return
-                self.logger.warning(
-                    "Streaming card {} final update failed, falling back to regular card",
+                # Required so the chat list preview exits the streaming placeholder (Feishu streaming card docs).
+                buf.sequence += 1
+                await loop.run_in_executor(
+                    None,
+                    self._close_streaming_mode_sync,
                     buf.card_id,
+                    buf.sequence,
                 )
-            for chunk in self._split_elements_by_table_limit(
-                self._build_card_elements(buf.text)
-            ):
-                card = json.dumps(
-                    {"config": {"wide_screen_mode": True}, "elements": chunk},
-                    ensure_ascii=False,
-                )
-                # Fallback replies stay in existing topics, but only create a
-                # new topic when reply-to-message is enabled.
-                fallback_msg_id = self._thread_reply_target(meta)
-                if fallback_msg_id:
-                    await loop.run_in_executor(
-                        None, lambda: self._reply_message_sync(
-                            fallback_msg_id, "interactive", card,
-                            reply_in_thread=self._should_use_reply_in_thread(meta),
-                        ),
+            else:
+                for chunk in self._split_elements_by_table_limit(
+                    self._build_card_elements(buf.text)
+                ):
+                    card = json.dumps(
+                        {"config": {"wide_screen_mode": True}, "elements": chunk},
+                        ensure_ascii=False,
                     )
-                else:
                     await loop.run_in_executor(
                         None, self._send_message_sync, rid_type, chat_id, "interactive", card
                     )
@@ -1456,18 +1408,8 @@ class FeishuChannel(BaseChannel):
 
         now = time.monotonic()
         if buf.card_id is None:
-            # Use the Reply API for existing topics, and only create new topics
-            # when reply-to-message is enabled.
-            use_reply_in_thread = self._should_use_reply_in_thread(meta)
-            reply_msg_id = self._thread_reply_target(meta)
             card_id = await loop.run_in_executor(
-                None,
-                lambda: self._create_streaming_card_sync(
-                    rid_type,
-                    chat_id,
-                    reply_msg_id,
-                    reply_in_thread=use_reply_in_thread,
-                ),
+                None, self._create_streaming_card_sync, rid_type, chat_id
             )
             if card_id:
                 buf.card_id = card_id
@@ -1513,22 +1455,33 @@ class FeishuChannel(BaseChannel):
                 # with the same 🔧 prefix style. Existing topics stay threaded;
                 # new topics are created only when reply-to-message is enabled.
                 card = json.dumps(
-                    {"config": {"wide_screen_mode": True}, "elements": [
-                        {"tag": "markdown", "content": self._format_tool_hint_delta(hint)},
-                    ]},
+                    {
+                        "config": {"wide_screen_mode": True},
+                        "elements": [
+                            {"tag": "markdown", "content": self._format_tool_hint_delta(hint)},
+                        ],
+                    },
                     ensure_ascii=False,
                 )
                 _th_msg_id = self._thread_reply_target(msg.metadata)
                 if _th_msg_id:
                     await loop.run_in_executor(
-                        None, lambda: self._reply_message_sync(
-                            _th_msg_id, "interactive", card,
+                        None,
+                        lambda: self._reply_message_sync(
+                            _th_msg_id,
+                            "interactive",
+                            card,
                             reply_in_thread=self._should_use_reply_in_thread(msg.metadata),
                         ),
                     )
                 else:
                     await loop.run_in_executor(
-                        None, self._send_message_sync, receive_id_type, msg.chat_id, "interactive", card
+                        None,
+                        self._send_message_sync,
+                        receive_id_type,
+                        msg.chat_id,
+                        "interactive",
+                        card,
                     )
                 return
 
@@ -1538,12 +1491,13 @@ class FeishuChannel(BaseChannel):
             # Always target message_id — the Feishu Reply API keeps replies in the
             # same topic automatically when the target message is inside a topic.
             reply_message_id: str | None = None
-            _msg_id = msg.metadata.get("message_id")
             if self.config.reply_to_message and not msg.metadata.get("_progress", False):
-                reply_message_id = _msg_id
+                reply_message_id = msg.metadata.get("message_id") or None
             # For topic group messages, always reply to keep context in thread
             elif msg.metadata.get("thread_id"):
-                reply_message_id = _msg_id
+                reply_message_id = (
+                    msg.metadata.get("root_id") or msg.metadata.get("message_id") or None
+                )
 
             first_send = True  # tracks whether the reply has already been used
 
@@ -1558,7 +1512,9 @@ class FeishuChannel(BaseChannel):
                 if reply_message_id and first_send:
                     first_send = False
                     ok = self._reply_message_sync(
-                        reply_message_id, m_type, content,
+                        reply_message_id,
+                        m_type,
+                        content,
                         reply_in_thread=self._should_use_reply_in_thread(msg.metadata),
                     )
                     if ok:
@@ -1643,9 +1599,7 @@ class FeishuChannel(BaseChannel):
             message = event.message
             sender = event.sender
 
-            self.logger.debug("raw message: {}", message.content)
-            self.logger.debug("mentions: {}", getattr(message, "mentions", None))
-
+            # Deduplication check
             message_id = message.message_id
 
             # Skip bot messages
@@ -1674,9 +1628,7 @@ class FeishuChannel(BaseChannel):
                 self._processed_message_ids.popitem(last=False)
 
             # Add reaction (non-blocking — tracked background task)
-            task = asyncio.create_task(
-                self._add_reaction(message_id, self.config.react_emoji)
-            )
+            task = asyncio.create_task(self._add_reaction(message_id, self.config.react_emoji))
             self._background_tasks.add(task)
             task.add_done_callback(self._on_background_task_done)
             task.add_done_callback(lambda t: self._on_reaction_added(message_id, t))
@@ -1783,7 +1735,6 @@ class FeishuChannel(BaseChannel):
                     "root_id": root_id,
                     "thread_id": thread_id,
                 },
-                session_key=session_key,
             )
 
         except Exception:
@@ -1852,9 +1803,33 @@ class FeishuChannel(BaseChannel):
 
         return "\n".join(part for part in parts if part)
 
-    def _format_tool_hint_delta(self, tool_hint: str) -> str:
-        """Format a tool hint string with the 🔧 prefix for each line."""
-        lines = self.__class__._format_tool_hint_lines(tool_hint).split("\n")
-        return "\n".join(
-            f"{self.config.tool_hint_prefix} {ln}" for ln in lines if ln.strip()
+    async def _send_tool_hint_card(
+        self, receive_id_type: str, receive_id: str, tool_hint: str
+    ) -> None:
+        """Send tool hint as an interactive card with formatted code block.
+
+        Args:
+            receive_id_type: "chat_id" or "open_id"
+            receive_id: The target chat or user ID
+            tool_hint: Formatted tool hint string (e.g., 'web_search("q"), read_file("path")')
+        """
+        loop = asyncio.get_running_loop()
+
+        # Put each top-level tool call on its own line without altering commas inside arguments.
+        formatted_code = self._format_tool_hint_lines(tool_hint)
+
+        card = {
+            "config": {"wide_screen_mode": True},
+            "elements": [
+                {"tag": "markdown", "content": f"**Tool Calls**\n\n```text\n{formatted_code}\n```"}
+            ],
+        }
+
+        await loop.run_in_executor(
+            None,
+            self._send_message_sync,
+            receive_id_type,
+            receive_id,
+            "interactive",
+            json.dumps(card, ensure_ascii=False),
         )
