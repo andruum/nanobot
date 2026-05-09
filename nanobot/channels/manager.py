@@ -380,12 +380,9 @@ class ChannelManager:
                 raise  # Propagate cancellation for graceful shutdown
             except Exception as e:
                 if attempt == max_attempts - 1:
-                    logger.error(
-                        "Failed to send to {} after {} attempts: {} - {}",
-                        msg.channel,
-                        max_attempts,
-                        type(e).__name__,
-                        e,
+                    logger.exception(
+                        "Failed to send to {} after {} attempts",
+                        msg.channel, max_attempts
                     )
                     return
                 delay = _SEND_RETRY_DELAYS[min(attempt, len(_SEND_RETRY_DELAYS) - 1)]

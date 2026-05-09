@@ -590,9 +590,7 @@ class TelegramChannel(BaseChannel):
                 delay = _SEND_RETRY_BASE_DELAY * (2 ** (attempt - 1))
                 self.logger.warning(
                     "timeout (attempt {}/{}), retrying in {:.1f}s",
-                    attempt,
-                    _SEND_MAX_RETRIES,
-                    delay,
+                    attempt, _SEND_MAX_RETRIES, delay,
                 )
                 await asyncio.sleep(delay)
             except RetryAfter as e:
@@ -601,9 +599,7 @@ class TelegramChannel(BaseChannel):
                 delay = float(e.retry_after)
                 self.logger.warning(
                     "Flood Control (attempt {}/{}), retrying in {:.1f}s",
-                    attempt,
-                    _SEND_MAX_RETRIES,
-                    delay,
+                    attempt, _SEND_MAX_RETRIES, delay,
                 )
                 await asyncio.sleep(delay)
 
@@ -1095,7 +1091,7 @@ class TelegramChannel(BaseChannel):
         media_paths.extend(current_media_paths)
         content_parts.extend(current_media_parts)
         if current_media_paths:
-            logger.debug("Downloaded message media to {}", current_media_paths[0])
+            self.logger.debug("Downloaded message media to {}", current_media_paths[0])
 
         # Reply context: text and/or media from the replied-to message
         reply = getattr(message, "reply_to_message", None)
@@ -1105,9 +1101,7 @@ class TelegramChannel(BaseChannel):
             if reply_media:
                 media_paths = reply_media + media_paths
                 self.logger.debug("Attached replied-to media: {}", reply_media[0])
-            tag = reply_ctx or (
-                f"[Reply to: {reply_media_parts[0]}]" if reply_media_parts else None
-            )
+            tag = reply_ctx or (f"[Reply to: {reply_media_parts[0]}]" if reply_media_parts else None)
             if tag:
                 content_parts.insert(0, tag)
         content = "\n".join(content_parts) if content_parts else "[empty message]"
