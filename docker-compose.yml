@@ -23,9 +23,9 @@ services:
       TZ: Europe/Berlin
     ports:
       - 18790:18790
+      - 8765:8765
     networks:
       - mcp-network
-      - 8765:8765
     deploy:
       resources:
         limits:
